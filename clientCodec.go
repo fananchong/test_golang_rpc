@@ -1,37 +1,54 @@
 package main
 
+// 官方使用 gob 编解码网络数据
+// 这里只是个演示，使用的是字符串编解码网络数据
+// 你可以改成诸如 protobuf 、 json 、 自定义编解码等等
+
 import (
-	"bufio"
-	"encoding/gob"
+	"encoding/binary"
 	"io"
 	"net/rpc"
 )
 
-type gobClientCodec struct {
-	rwc    io.ReadWriteCloser
-	dec    *gob.Decoder
-	enc    *gob.Encoder
-	encBuf *bufio.Writer
+type rpcClientCodec struct {
+	rwc io.ReadWriteCloser
 }
 
-func (c *gobClientCodec) WriteRequest(r *rpc.Request, body interface{}) (err error) {
-	if err = c.enc.Encode(r); err != nil {
-		return
-	}
-	if err = c.enc.Encode(body); err != nil {
-		return
-	}
-	return c.encBuf.Flush()
+func (c *rpcClientCodec) WriteRequest(r *rpc.Request, body interface{}) (err error) {
+	// write r
+	binary.Write(c.rwc, binary.LittleEndian, uint16(len(r.ServiceMethod)))
+	c.rwc.Write([]byte(r.ServiceMethod))
+	// write body
+	data := []byte(body.(string))
+	binary.Write(c.rwc, binary.LittleEndian, uint16(len(data)))
+	c.rwc.Write(data)
+	return
 }
 
-func (c *gobClientCodec) ReadResponseHeader(r *rpc.Response) error {
-	return c.dec.Decode(r)
+func (c *rpcClientCodec) ReadResponseHeader(r *rpc.Response) error {
+	var n uint16
+	// r.ServiceMethod
+	binary.Read(c.rwc, binary.LittleEndian, &n)
+	temp := make([]byte, n)
+	c.rwc.Read(temp[:])
+	r.ServiceMethod = string(temp)
+	// r.Error
+	binary.Read(c.rwc, binary.LittleEndian, &n)
+	temp = make([]byte, n)
+	c.rwc.Read(temp[:])
+	r.Error = string(temp)
+	return nil
 }
 
-func (c *gobClientCodec) ReadResponseBody(body interface{}) error {
-	return c.dec.Decode(body)
+func (c *rpcClientCodec) ReadResponseBody(body interface{}) error {
+	var n uint16
+	binary.Read(c.rwc, binary.LittleEndian, &n)
+	temp := make([]byte, n)
+	c.rwc.Read(temp[:])
+	*body.(*string) = string(temp)
+	return nil
 }
 
-func (c *gobClientCodec) Close() error {
+func (c *rpcClientCodec) Close() error {
 	return c.rwc.Close()
 }

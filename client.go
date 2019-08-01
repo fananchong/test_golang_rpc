@@ -1,9 +1,11 @@
 package main
 
+// golang rpc 已经抽象除了 io 层，因此可以使用 mock 的方式接管网络IO
+// 使用 readWriteCloser 类接管 io 层，实际上只是内存中数据过了一遍
+// 这种模式可以称之为 mock
+
 import (
-	"bufio"
 	"bytes"
-	"encoding/gob"
 	"errors"
 	"net/rpc"
 )
@@ -13,8 +15,7 @@ func mockClientSend(method, name string) (reqData []byte) {
 		rbuf: bytes.NewBuffer(nil),
 		wbuf: bytes.NewBuffer(nil),
 	}
-	encBuf := bufio.NewWriter(rwc)
-	c := &gobClientCodec{rwc, gob.NewDecoder(rwc), gob.NewEncoder(encBuf), encBuf}
+	c := &rpcClientCodec{rwc}
 
 	req := &rpc.Request{}
 	req.ServiceMethod = method
@@ -30,8 +31,7 @@ func mockClientRecv(repData []byte) (result string) {
 		rbuf: bytes.NewBuffer(repData),
 		wbuf: bytes.NewBuffer(nil),
 	}
-	encBuf := bufio.NewWriter(rwc)
-	c := &gobClientCodec{rwc, gob.NewDecoder(rwc), gob.NewEncoder(encBuf), encBuf}
+	c := &rpcClientCodec{rwc}
 
 	response := rpc.Response{}
 	if err := c.ReadResponseHeader(&response); err != nil {
